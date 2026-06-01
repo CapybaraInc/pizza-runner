@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>PIZZA RUNNER: IMMORTAL EDITION</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            max-width: 420px;
+            height: 100vh;
+            max-height: 750px;
+            overflow: hidden;
+            border: 4px solid #FF6347;
+            border-radius: 10px;
+            box-shadow: 0 0 60px rgba(255, 69, 0, 0.8);
+            transition: box-shadow 0.3s;
+        }
+        #gameContainer.danger {
+            box-shadow: 0 0 100px rgba(255, 0, 0, 1);
+            animation: dangerPulse 0.5s infinite;
+        }
+        @keyframes dangerPulse {
+            0%,100% { border-color: #FF6347; }
+            50% { border-color: #FF0000; }
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            pointer-events: none;
+            z-index: 10;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .ui-text {
+            background: rgba(0, 0, 0, 0.75);
+            color: #FFD700;
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 13px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        #comboLabel {
+            color: #FF4500;
+            font-size: 16px;
+            display: none;
+        }
+        #frenzyLabel {
+            color: #FF00FF;
+            display: none;
+            animation: frenzyBlink 0.3s infinite;
+        }
+        @keyframes frenzyBlink {
+            0%,100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        #adrenalineBar {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            right: 15px;
+            height: 10px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 5px;
+            pointer-events: none;
+            z-index: 10;
+            overflow: hidden;
+        }
+        #adrenalineFill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #FF4500, #FFD700);
+            border-radius: 5px;
+            transition: width 0.3s;
+        }
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 20;
+            pointer-events: auto;
+        }
+        .screen-content {
+            text-align: center;
+            padding: 25px;
+            background: rgba(20, 5, 0, 0.95);
+            border-radius: 20px;
+            border: 3px solid #FF6347;
+            box-shadow: 0 0 40px rgba(255, 69, 0, 0.6);
+        }
+        h1 {
+            color: #FF6347;
+            font-size: 28px;
+            margin-bottom: 8px;
+            text-shadow: 0 0 20px #FF4500;
+        }
+        .emoji-icon {
+            font-size: 55px;
+            margin: 8px 0;
+        }
+        p {
+            color: #FFD700;
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 14px 35px;
+            margin-top: 12px;
+            background: linear-gradient(135deg, #FF6347, #FF4500);
+            color: white;
+            border: none;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            letter-spacing: 1px;
+            box-shadow: 0 5px 25px rgba(255, 69, 0, 0.6);
+            transition: all 0.2s;
+            pointer-events: auto;
+        }
+        .btn:active {
+            transform: scale(0.93);
+            box-shadow: 0 2px 15px rgba(255, 69, 0, 1);
+        }
+        .final-score {
+            font-size: 50px;
+            color: #FFD700;
+            font-weight: bold;
+            text-shadow: 0 0 25px gold;
+        }
+        .stat {
+            color: #FFA500;
+            font-size: 13px;
+            margin: 3px 0;
+        }
+        #gameOverScreen { display: none; }
+        #startScreen { display: flex; }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui">
+            <span class="ui-text" id="scoreLabel">🍕 0</span>
+            <span class="ui-text" id="highScoreLabel">🏆 0</span>
+            <span class="ui-text" id="comboLabel">🔥 x1</span>
+            <span class="ui-text" id="frenzyLabel">⚡FRENZY⚡</span>
+            <span class="ui-text" id="levelLabel">🌍 Уровень 1</span>
+        </div>
+        <div id="adrenalineBar">
+            <div id="adrenalineFill"></div>
+        </div>
+        <div id="startScreen">
+            <div class="screen-content">
+                <div class="emoji-icon">🍕💀</div>
+                <h1>PIZZA RUNNER</h1>
+                <p>IMMORTAL EDITION</p>
+                <p>🏃 Убегай от ПИЦЦЫ-УБИЙЦЫ</p>
+                <p>🍕 Собирай пепперони (комбо!)</p>
+                <p>⚡ 5 подряд = FRENZY</p>
+                <p>👆 Тап — ПРЫЖОК</p>
+                <button class="btn" id="startBtn">▶ В БОЙ!</button>
+            </div>
+        </div>
+        <div id="gameOverScreen">
+            <div class="screen-content">
+                <div class="emoji-icon">💀🍕</div>
+                <h1>СЪЕДЕН ПИЦЦЕЙ!</h1>
+                <p class="final-score" id="finalScore">0</p>
+                <p id="newHighScore" style="color:#FF4500;display:none;">🔥 НОВЫЙ РЕКОРД! 🔥</p>
+                <p class="stat">Макс. комбо: <span id="maxComboStat">x1</span></p>
+                <p class="stat">Уровень: <span id="levelStat">1</span></p>
+                <button class="btn" id="restartBtn">🔄 РЕВАНШ!</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('gameContainer');
+
+        // UI
+        const scoreLabel = document.getElementById('scoreLabel');
+        const highScoreLabel = document.getElementById('highScoreLabel');
+        const comboLabel = document.getElementById('comboLabel');
+        const frenzyLabel = document.getElementById('frenzyLabel');
+        const levelLabel = document.getElementById('levelLabel');
+        const adrenalineFill = document.getElementById('adrenalineFill');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalScoreEl = document.getElementById('finalScore');
+        const newHighScoreEl = document.getElementById('newHighScore');
+        const maxComboStat = document.getElementById('maxComboStat');
+        const levelStat = document.getElementById('levelStat');
+
+        let W, H, groundY;
+        function resize() {
+            W = container.clientWidth;
+            H = container.clientHeight;
+            canvas.width = W;
+            canvas.height = H;
+            groundY = H * 0.84;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        // Игровые объекты
+        let player = { x: 0, y: 0, width: 50, height: 55, vy: 0, jumping: false };
+        let pizza = { x: 0, y: 0, width: 120, height: 120, rotation: 0 };
+        let obstacles = [], coins = [], particles = [];
+        let score = 0, highScore = localStorage.getItem('pizzaRunnerUltraScore') || 0;
+        let gameSpeed = 4, baseGameSpeed = 4;
+        let gameRunning = false, gameOver = false;
+        let gravity = 0.75, jumpForce = -14;
+        let frameCount = 0, pizzaDistance = 370;
+        let comboCount = 0, maxCombo = 0, comboTimer = 0;
+        let frenzyMode = false, frenzyTimer = 0;
+        let adrenaline = 0;
+        let level = 1;
+        let screenShake = 0;
+        let bgOffset = 0;
+
+        highScoreLabel.textContent = '🏆 ' + highScore;
+
+        // Аудио (Web Audio API — пищалки)
+        let audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+        }
+        function beep(freq, duration, type = 'square', vol = 0.08) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.value = freq;
+            gain.gain.value = vol;
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function init() {
+            player.x = W * 0.22;
+            player.y = groundY - player.height;
+            player.vy = 0;
+            player.jumping = false;
+            pizza.x = player.x - pizzaDistance;
+            pizza.y = groundY - pizza.height + 15;
+            pizza.rotation = 0;
+            obstacles = [];
+            coins = [];
+            particles = [];
+            score = 0;
+            gameSpeed = baseGameSpeed;
+            frameCount = 0;
+            comboCount = 0;
+            maxCombo = 0;
+            comboTimer = 0;
+            frenzyMode = false;
+            frenzyTimer = 0;
+            adrenaline = 0;
+            level = 1;
+            screenShake = 0;
+            bgOffset = 0;
+            scoreLabel.textContent = '🍕 0';
+            comboLabel.style.display = 'none';
+            frenzyLabel.style.display = 'none';
+            levelLabel.textContent = '🌍 Уровень 1';
+            adrenalineFill.style.width = '0%';
+            container.classList.remove('danger');
+        }
+
+        function spawnObstacle() {
+            const r = Math.random();
+            let obs;
+            if (r < 0.5) {
+                obs = { x: W + 60, y: groundY - 50, width: 48, height: 48, type: 'box', color: '#8B4513' };
+            } else if (r < 0.85) {
+                obs = { x: W + 60, y: groundY - 28, width: 65, height: 28, type: 'sauce', color: '#FF0000' };
+            } else {
+                obs = { x: W + 60, y: groundY - 70, width: 70, height: 20, type: 'flyingSaucer', color: '#C0C0C0' };
+            }
+            obstacles.push(obs);
+        }
+
+        function spawnCoin() {
+            let yOff = groundY - 45 - Math.random() * 130;
+            if (Math.random() < 0.3) yOff = groundY - 150 - Math.random() * 60;
+            coins.push({ x: W + 40, y: yOff, width: 30, height: 30, collected: false, bobOff: Math.random() * Math.PI * 2, sparkTimer: 0 });
+        }
+
+        function spawnParticles(x, y, color, count = 12) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 6,
+                    vy: (Math.random() - 0.5) * 6 - 3,
+                    life: 1,
+                    decay: 0.02 + Math.random() * 0.04,
+                    size: 3 + Math.random() * 5,
+                    color: color
+                });
+            }
+        }
+
+        function checkCollision(a, b) {
+            return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+        }
+
+        function jump() {
+            if (!player.jumping && gameRunning && !gameOver) {
+                player.vy = jumpForce;
+                player.jumping = true;
+                beep(500, 0.08, 'square', 0.04);
+            }
+        }
+
+        function update() {
+            if (!gameRunning || gameOver) return;
+            frameCount++;
+
+            // Уровень
+            level = Math.floor(score / 200) + 1;
+            baseGameSpeed = 4 + (level - 1) * 1.2;
+            if (baseGameSpeed > 13) baseGameSpeed = 13;
+            gameSpeed = frenzyMode ? baseGameSpeed * 0.6 : baseGameSpeed;
+            levelLabel.textContent = '🌍 Уровень ' + level;
+
+            // Адреналин
+            let distToPizza = Math.abs((player.x + player.width / 2) - (pizza.x + pizza.width / 2));
+            if (distToPizza < 250) {
+                adrenaline = Math.min(100, adrenaline + 0.8);
+                if (distToPizza < 120) screenShake = Math.max(screenShake, 8);
+                container.classList.add('danger');
+            } else {
+                adrenaline = Math.max(0, adrenaline - 0.3);
+                container.classList.remove('danger');
+            }
+            adrenalineFill.style.width = adrenaline + '%';
+            if (adrenaline > 80) {
+                beep(200 + adrenaline, 0.05, 'sawtooth', 0.02);
+            }
+
+            // Экран трясётся
+            if (screenShake > 0) screenShake *= 0.85;
+            if (screenShake < 0.1) screenShake = 0;
+
+            // Игрок
+            player.vy += gravity;
+            player.y += player.vy;
+            if (player.y >= groundY - player.height) {
+                player.y = groundY - player.height;
+                player.vy = 0;
+                player.jumping = false;
+            }
+
+            // Пицца
+            let targetX = player.x - pizzaDistance + (frenzyMode ? 60 : 0);
+            pizza.x += (targetX - pizza.x) * 0.04;
+            pizza.y = groundY - pizza.height + 15 + Math.sin(frameCount * 0.03) * 10;
+            pizza.rotation += 0.025;
+
+            // Комбо
+            if (comboTimer > 0) {
+                comboTimer--;
+                if (comboTimer <= 0) {
+                    comboCount = 0;
+                    comboLabel.style.display = 'none';
+                }
+            }
+
+            // Frenzy
+            if (frenzyMode) {
+                frenzyTimer--;
+                frenzyLabel.style.display = 'block';
+                if (frenzyTimer <= 0) {
+                    frenzyMode = false;
+                    frenzyLabel.style.display = 'none';
+                }
+            }
+
+            // Препятствия
+            for (let obs of obstacles) {
+                obs.x -= gameSpeed;
+                if (checkCollision(player, obs)) {
+                    if (frenzyMode && obs.type !== 'flyingSaucer') {
+                        spawnParticles(obs.x + obs.width / 2, obs.y + obs.height / 2, '#FFD700', 20);
+                        obs.x = -200;
+                        score += 25;
+                        beep(800, 0.1, 'triangle', 0.06);
+                        screenShake = 5;
+                    } else {
+                        endGame();
+                        return;
+                    }
+                }
+            }
+            obstacles = obstacles.filter(o => o.x > -150);
+
+            // Монеты
+            for (let coin of coins) {
+                coin.x -= gameSpeed;
+                if (!coin.collected && checkCollision(player, coin)) {
+                    coin.collected = true;
+                    coin.sparkTimer = 10;
+                    comboCount++;
+                    comboTimer = 90;
+                    if (comboCount > maxCombo) maxCombo = comboCount;
+                    let pts = 10 * comboCount;
+                    if (frenzyMode) pts *= 3;
+                    score += pts;
+                    scoreLabel.textContent = '🍕 ' + score;
+                    comboLabel.textContent = '🔥 x' + comboCount;
+                    comboLabel.style.display = 'block';
+                    spawnParticles(coin.x + coin.width / 2, coin.y + coin.height / 2, '#FFD700', 15);
+                    beep(600 + comboCount * 30, 0.08, 'sine', 0.05);
+                    if (comboCount >= 5 && !frenzyMode) {
+                        frenzyMode = true;
+                        frenzyTimer = 180;
+                        screenShake = 10;
+                        spawnParticles(player.x + player.width / 2, player.y, '#FF00FF', 30);
+                        beep(1000, 0.2, 'sawtooth', 0.1);
+                    }
+                }
+            }
+            coins = coins.filter(c => c.x > -60 && !c.collected);
+
+            // Частицы
+            for (let p of particles) {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= p.decay;
+            }
+            particles = particles.filter(p => p.life > 0);
+
+            // Столкновение с пиццей
+            if (checkCollision(player, pizza) && !frenzyMode) {
+                endGame();
+                return;
+            }
+
+            // Спавн
+            let spawnRateObs = Math.max(30, 75 - level * 4);
+            let spawnRateCoin = Math.max(15, 35 - level * 2);
+            if (frameCount % spawnRateObs === 0) spawnObstacle();
+            if (frameCount % spawnRateCoin === 0) spawnCoin();
+            if (frameCount % 5 === 0) { score++; scoreLabel.textContent = '🍕 ' + score; }
+
+            // Фон
+            bgOffset = (bgOffset + gameSpeed * 0.5) % 80;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, W, H);
+            let shakeX = (Math.random() - 0.5) * screenShake;
+            let shakeY = (Math.random() - 0.5) * screenShake;
+            ctx.save();
+            ctx.translate(shakeX, shakeY);
+
+            // Фон по уровням
+            let skyTop, skyMid, skyBot;
+            if (level <= 2) { skyTop = '#87CEEB';
+                skyMid = '#FFE4B5';
+                skyBot = '#8B4513'; } else if (level <= 4) { skyTop = '#FF6347';
+                skyMid = '#FF4500';
+                skyBot = '#4A0000'; } else if (level <= 6) { skyTop = '#2F1B4D';
+                skyMid = '#1a0033';
+                skyBot = '#0d001a'; } else { skyTop = '#000';
+                skyMid = '#1a0000';
+                skyBot = '#330000'; }
+
+            let grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, skyTop);
+            grad.addColorStop(0.5, skyMid);
+            grad.addColorStop(0.85, skyBot);
+            grad.addColorStop(1, '#3E2723');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            // Дорожная разметка
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            for (let i = -bgOffset; i < W + 80; i += 80) {
+                ctx.fillRect(i, groundY + 8, 35, 5);
+            }
+
+            // Земля
+            ctx.fillStyle = '#4E342E';
+            ctx.fillRect(0, groundY, W, H - groundY);
+            ctx.fillStyle = '#5D4037';
+            ctx.fillRect(0, groundY, W, 6);
+
+            // Монеты
+            for (let coin of coins) {
+                if (coin.collected) continue;
+                let cy = coin.y + Math.sin(frameCount * 0.07 + coin.bobOff) * 6;
+                ctx.fillStyle = 'rgba(255,215,0,0.5)';
+                ctx.beginPath();
+                ctx.arc(coin.x + coin.width / 2, cy + coin.height / 2, coin.width / 2 + 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#FFD700';
+                ctx.beginPath();
+                ctx.arc(coin.x + coin.width / 2, cy + coin.height / 2, coin.width / 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#FFA500';
+                ctx.beginPath();
+                ctx.arc(coin.x + coin.width / 2, cy + coin.height / 2, coin.width / 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#FFF';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('🍕', coin.x + coin.width / 2, cy + coin.height / 2 + 5);
+            }
+
+            // Препятствия
+            for (let obs of obstacles) {
+                if (obs.type === 'box') {
+                    ctx.fillStyle = '#6D4C41';
+                    ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+                    ctx.fillStyle = '#8D6E63';
+                    ctx.fillRect(obs.x + 5, obs.y + 5, obs.width - 10, obs.height - 10);
+                    ctx.strokeStyle = '#4E342E';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+                } else if (obs.type === 'sauce') {
+                    ctx.fillStyle = '#FF1744';
+                    ctx.beginPath();
+                    ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#D50000';
+                    ctx.beginPath();
+                    ctx.ellipse(obs.x + obs.width / 2 - 4, obs.y + obs.height / 2 - 2, obs.width / 3, obs.height / 3, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (obs.type === 'flyingSaucer') {
+                    ctx.fillStyle = '#B0BEC5';
+                    ctx.beginPath();
+                    ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#ECEFF1';
+                    ctx.beginPath();
+                    ctx.arc(obs.x + obs.width / 2, obs.y - 5, 12, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Игрок
+            drawPlayer(player.x, player.y, frenzyMode);
+
+            // Пицца
+            drawPizza(pizza.x, pizza.y, pizza.rotation, frenzyMode);
+
+            // Частицы
+            for (let p of particles) {
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            ctx.restore();
+
+            // Эффект виньетки при опасности
+            if (adrenaline > 60) {
+                let vignette = ctx.createRadialGradient(W / 2, H / 2, W * 0.4, W / 2, H / 2, W * 0.8);
+                vignette.addColorStop(0, 'rgba(255,0,0,0)');
+                vignette.addColorStop(1, 'rgba(255,0,0,' + (adrenaline / 300) + ')');
+                ctx.fillStyle = vignette;
+                ctx.fillRect(0, 0, W, H);
+            }
+        }
+
+        function drawPlayer(x, y, frenzy) {
+            let glow = frenzy ? 12 : 0;
+            if (glow > 0) {
+                ctx.fillStyle = 'rgba(255,0,255,0.5)';
+                ctx.beginPath();
+                ctx.arc(x + 25, y + 27, 30, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.fillStyle = 'rgba(0,0,0,0.35)';
+            ctx.beginPath();
+            ctx.ellipse(x + 25, y + 54, 22, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+            let legOff = Math.sin(frameCount * 0.35) * 7;
+            ctx.fillStyle = '#1B2631';
+            ctx.fillRect(x + 8, y + 38, 13, 17);
+            ctx.fillRect(x + 29, y + 38 - legOff, 13, 17 + legOff);
+            ctx.fillStyle = frenzy ? '#FF00FF' : '#FF6347';
+            ctx.fillRect(x + 5, y + 14, 40, 28);
+            ctx.fillStyle = frenzy ? '#CC00CC' : '#E53935';
+            ctx.fillRect(x + 8, y + 17, 34, 22);
+            ctx.fillStyle = '#FFCCBC';
+            ctx.beginPath();
+            ctx.arc(x + 25, y + 13, 15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(x + 19, y + 11, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x + 31, y + 11, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+            if (frenzy) {
+                ctx.fillStyle = '#FF00FF';
+                ctx.beginPath();
+                ctx.arc(x + 19, y + 11, 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 31, y + 11, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.fillStyle = '#FFF';
+            ctx.fillRect(x + 10, y - 3, 30, 13);
+            ctx.beginPath();
+            ctx.arc(x + 25, y - 3, 17, Math.PI, 0);
+            ctx.fill();
+            ctx.fillStyle = '#FFF';
+            ctx.fillRect(x + 12, y + 22, 26, 19);
+            ctx.fillStyle = frenzy ? '#FF00FF' : '#FF6347';
+            ctx.fillRect(x + 18, y + 25, 14, 5);
+        }
+
+        function drawPizza(x, y, rot, frenzy) {
+            ctx.save();
+            ctx.translate(x + 60, y + 60);
+            ctx.rotate(rot);
+            let glow = frenzy ? 15 : 0;
+            if (glow > 0) {
+                ctx.fillStyle = 'rgba(255,100,0,0.4)';
+                ctx.beginPath();
+                ctx.arc(0, 0, 60 + glow, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            ctx.beginPath();
+            ctx.arc(4, 4, 58, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#F4A460';
+            ctx.beginPath();
+            ctx.arc(0, 0, 57, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#FFD54F';
+            ctx.beginPath();
+            ctx.arc(0, 0, 50, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#E53935';
+            ctx.beginPath();
+            ctx.arc(0, 0, 43, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#B71C1C';
+            for (let i = 0; i < 10; i++) {
+                let a = (i / 10) * Math.PI * 2;
+                ctx.beginPath();
+                ctx.arc(Math.cos(a) * 28, Math.sin(a) * 28, 9, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            // Глаза
+            ctx.fillStyle = '#FFF';
+            ctx.beginPath();
+            ctx.arc(-17, -14, 15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(17, -14, 15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(-13, -12, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(21, -12, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#FFF';
+            ctx.beginPath();
+            ctx.arc(-15, -15, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(19, -15, 3, 0, Math.PI * 2);
+            ctx.fill();
+            // Рот
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 12, 18, 0.15, Math.PI - 0.15);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function endGame() {
+            gameOver = true;
+            gameRunning = false;
+            gameOverScreen.style.display = 'flex';
+            finalScoreEl.textContent = score;
+            maxComboStat.textContent = 'x' + maxCombo;
+            levelStat.textContent = level;
+            container.classList.remove('danger');
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('pizzaRunnerUltraScore', highScore);
+                highScoreLabel.textContent = '🏆 ' + highScore;
+                newHighScoreEl.style.display = 'block';
+                beep(200, 0.5, 'sawtooth', 0.15);
+                beep(150, 0.5, 'sawtooth', 0.15);
+            } else {
+                newHighScoreEl.style.display = 'none';
+                beep(150, 0.4, 'square', 0.1);
+            }
+            spawnParticles(player.x + 25, player.y + 27, '#FF0000', 40);
+        }
+
+        function startGame() {
+            initAudio();
+            init();
+            gameOver = false;
+            gameRunning = true;
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            beep(400, 0.15, 'sine', 0.06);
+            setTimeout(() => beep(600, 0.15, 'sine', 0.06), 150);
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        document.getElementById('restartBtn').addEventListener('click', startGame);
+        canvas.addEventListener('click', (e) => { e.preventDefault();
+            jump(); });
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault();
+            jump(); });
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault();
+                jump(); }
+        });
+
+        init();
+        gameLoop();
+    </script>
+</body>
+          </html>
