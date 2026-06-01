@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>PIZZA BATTLE ONLINE</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#000;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;touch-action:manipulation;font-family:Arial,sans-serif;-webkit-tap-highlight-color:transparent;user-select:none}
+        #gameContainer{position:relative;width:100%;max-width:420px;height:100vh;max-height:750px;overflow:hidden;border:4px solid #FF6347;border-radius:10px;box-shadow:0 0 60px rgba(255,69,0,.8);background:#1a0a00}
+        canvas{display:block;width:100%;height:100%}
+        #menu,#lobby,#gameOverScreen{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;background:rgba(0,0,0,.85);z-index:20}
+        .panel{text-align:center;padding:25px;background:rgba(20,5,0,.95);border-radius:20px;border:3px solid #FF6347;box-shadow:0 0 40px rgba(255,69,0,.6);max-width:320px;width:90%}
+        h1{color:#FF6347;font-size:24px;margin-bottom:8px;text-shadow:0 0 15px #FF4500}
+        .emoji{font-size:50px;margin:6px 0}
+        p{color:#FFD700;margin:4px 0;font-size:13px}
+        .btn{display:inline-block;padding:12px 28px;margin:6px;background:linear-gradient(135deg,#FF6347,#FF4500);color:#fff;border:none;border-radius:25px;font-size:16px;font-weight:bold;cursor:pointer;letter-spacing:1px;box-shadow:0 4px 20px rgba(255,69,0,.5);transition:all .2s}
+        .btn:active{transform:scale(.93)}
+        .btn.small{padding:8px 18px;font-size:13px;background:#555}
+        input{padding:12px;margin:8px;border-radius:20px;border:2px solid #FF6347;background:#000;color:#FFD700;text-align:center;font-size:18px;width:160px;letter-spacing:4px}
+        #roomCode{font-size:32px;color:#FFD700;letter-spacing:8px;font-weight:bold;margin:10px 0;text-shadow:0 0 20px gold}
+        #status{color:#FFF;font-size:12px;margin:5px 0}
+        #lobby,#gameOverScreen{display:none}
+        #menu{display:flex}
+        .final-score{font-size:44px;color:#FFD700;font-weight:bold;text-shadow:0 0 20px gold}
+    </style>
+</head>
+<body>
+<div id="gameContainer">
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="menu">
+        <div class="panel">
+            <div class="emoji">🍕⚔️</div>
+            <h1>PIZZA BATTLE</h1>
+            <p>ONLINE</p>
+            <button class="btn" id="btnHost">📡 СОЗДАТЬ КОМНАТУ</button>
+            <p style="color:#FFF;">— или —</p>
+            <input type="text" id="joinCodeInput" placeholder="ВСТАВЬ КОД" maxlength="20">
+            <button class="btn" id="btnJoin">🔗 ВОЙТИ</button>
+            <p id="menuStatus" style="color:#FFA500;"></p>
+        </div>
+    </div>
+
+    <div id="lobby">
+        <div class="panel">
+            <div class="emoji">⏳</div>
+            <h1>ОЖИДАНИЕ...</h1>
+            <p>Твой код (нажми чтобы скопировать):</p>
+            <p id="roomCode" style="cursor:pointer;">------</p>
+            <p id="status">Ждём второго игрока...</p>
+            <button class="btn small" id="btnCancel">❌ ВЫЙТИ В МЕНЮ</button>
+        </div>
+    </div>
+
+    <div id="gameOverScreen">
+        <div class="panel">
+            <div class="emoji">🏆</div>
+            <h1 id="winText">ПОБЕДИТЕЛЬ!</h1>
+            <p class="final-score" id="finalScore">0</p>
+            <button class="btn" id="btnRematch">🔄 РЕВАНШ</button>
+            <button class="btn small" id="btnMenu">🏠 ВЫЙТИ В МЕНЮ</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.1/dist/peerjs.min.js"></script>
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('gameContainer');
+
+    const menu = document.getElementById('menu');
+    const lobby = document.getElementById('lobby');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const roomCodeEl = document.getElementById('roomCode');
+    const statusEl = document.getElementById('status');
+    const menuStatus = document.getElementById('menuStatus');
+    const joinCodeInput = document.getElementById('joinCodeInput');
+    const winText = document.getElementById('winText');
+    const finalScoreEl = document.getElementById('finalScore');
+
+    let W, H, groundY;
+    function resize() {
+        W = container.clientWidth;
+        H = container.clientHeight;
+        canvas.width = W;
+        canvas.height = H;
+        groundY = H * 0.84;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    let myPlayer = { x: 0, y: 0, width: 45, height: 50, vy: 0, jumping: false, dead: false, color: '#FF6347' };
+    let remotePlayer = { x: 0, y: 0, width: 45, height: 50, vy: 0, jumping: false, dead: false, color: '#00BFFF' };
+    let pizza = { x: 0, y: 0, width: 110, height: 110, rotation: 0 };
+    let obstacles = [], coins = [];
+    let myScore = 0, remoteScore = 0;
+    let gameSpeed = 4, gameRunning = false, gameOver = false;
+    let gravity = 0.7, jumpForce = -13;
+    let frameCount = 0, pizzaDistance = 360;
+
+    let peer, conn;
+    let myId, remoteId;
+    let amHost = false;
+
+    function resetAll() {
+        if (conn) { conn.close();
+            conn = null; }
+        if (peer) { peer.destroy();
+            peer = null; }
+        gameRunning = false;
+        gameOver = false;
+        amHost = false;
+        myId = null;
+        remoteId = null;
+        menu.style.display = 'flex';
+        lobby.style.display = 'none';
+        gameOverScreen.style.display = 'none';
+        menuStatus.textContent = '';
+        joinCodeInput.value = '';
+    }
+
+    function initGame() {
+        myPlayer.x = W * 0.18;
+        myPlayer.y = groundY - myPlayer.height;
+        myPlayer.vy = 0;
+        myPlayer.jumping = false;
+        myPlayer.dead = false;
+
+        remotePlayer.x = W * 0.6;
+        remotePlayer.y = groundY - remotePlayer.height;
+        remotePlayer.vy = 0;
+        remotePlayer.jumping = false;
+        remotePlayer.dead = false;
+
+        pizza.x = myPlayer.x - pizzaDistance;
+        pizza.y = groundY - pizza.height + 15;
+        pizza.rotation = 0;
+        obstacles = [];
+        coins = [];
+        myScore = 0;
+        remoteScore = 0;
+        gameSpeed = 4;
+        frameCount = 0;
+        gameOver = false;
+        gameRunning = true;
+        gameOverScreen.style.display = 'none';
+        lobby.style.display = 'none';
+        menu.style.display = 'none';
+    }
+
+    function spawnObstacle() {
+        let r = Math.random();
+        let obs;
+        if (r < 0.4) obs = { x: W + 50, y: groundY - 45, width: 44, height: 44, type: 'box' };
+        else if (r < 0.7) obs = { x: W + 50, y: groundY - 25, width: 60, height: 25, type: 'sauce' };
+        else obs = { x: W + 50, y: groundY - 80, width: 55, height: 20, type: 'flying' };
+        obstacles.push(obs);
+    }
+
+    function spawnCoin() {
+        coins.push({ x: W + 30, y: groundY - 40 - Math.random() * 140, width: 26, height: 26, collected: false, bobOff: Math.random() * Math.PI * 2 });
+    }
+
+    function checkCollision(a, b) {
+        return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+    }
+
+    function sendGameState() {
+        if (!conn || !conn.open) return;
+        conn.send({
+            type: 'gameState',
+            myX: myPlayer.x, myY: myPlayer.y, myDead: myPlayer.dead,
+            myScore: myScore,
+            obstacles: obstacles.map(o => ({ x: o.x, y: o.y, width: o.width, height: o.height, type: o.type })),
+            coins: coins.filter(c => !c.collected).map(c => ({ x: c.x, y: c.y })),
+            pizzaX: pizza.x, pizzaY: pizza.y, pizzaRot: pizza.rotation,
+            gameSpeed: gameSpeed, frameCount: frameCount
+        });
+    }
+
+    function update() {
+        if (!gameRunning || gameOver) return;
+        frameCount++;
+
+        myPlayer.vy += gravity;
+        myPlayer.y += myPlayer.vy;
+        if (myPlayer.y >= groundY - myPlayer.height) { myPlayer.y = groundY - myPlayer.height;
+            myPlayer.vy = 0;
+            myPlayer.jumping = false; }
+
+        let targetX = Math.min(myPlayer.x, remotePlayer.x) - pizzaDistance;
+        pizza.x += (targetX - pizza.x) * 0.04;
+        pizza.y = groundY - pizza.height + 15 + Math.sin(frameCount * 0.03) * 10;
+        pizza.rotation += 0.025;
+
+        if (amHost) {
+            for (let obs of obstacles) obs.x -= gameSpeed;
+            obstacles = obstacles.filter(o => o.x > -200);
+            if (frameCount % 60 === 0) spawnObstacle();
+            if (frameCount % 25 === 0) spawnCoin();
+            for (let coin of coins) coin.x -= gameSpeed;
+            coins = coins.filter(c => c.x > -50 && !c.collected);
+
+            [myPlayer, remotePlayer].forEach(p => {
+                if (p.dead) return;
+                for (let obs of obstacles) {
+                    if (checkCollision(p, obs)) { p.dead = true; }
+                }
+                for (let coin of coins) {
+                    if (!coin.collected && checkCollision(p, coin)) {
+                        coin.collected = true;
+                        if (p === myPlayer) myScore += 10; else remoteScore += 10;
+                    }
+                }
+                if (checkCollision(p, pizza)) p.dead = true;
+            });
+            if (frameCount % 5 === 0) { myScore++;
+                remoteScore++; }
+        }
+
+        if (myPlayer.dead || remotePlayer.dead) {
+            endGame();
+            return;
+        }
+
+        if (amHost) sendGameState();
+    }
+
+    function drawPlayer(p) {
+        if (p.dead) return;
+        let x = p.x, y = p.y, w = p.width, h = p.height;
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.ellipse(x + w / 2, y + h, w / 2, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        let legOff = Math.sin(frameCount * 0.3) * 5;
+        ctx.fillStyle = '#1B2631';
+        ctx.fillRect(x + 6, y + 34, 12, 16);
+        ctx.fillRect(x + 27, y + 34 - legOff, 12, 16 + legOff);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(x + 4, y + 12, 37, 26);
+        ctx.fillStyle = '#FFCCBC';
+        ctx.beginPath();
+        ctx.arc(x + w / 2, y + 11, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(x + 18, y + 9, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x + 28, y + 9, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, W, H);
+        let grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#87CEEB');
+        grad.addColorStop(0.5, '#FFE4B5');
+        grad.addColorStop(0.85, '#8B4513');
+        grad.addColorStop(1, '#3E2723');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#4E342E';
+        ctx.fillRect(0, groundY, W, H - groundY);
+
+        for (let coin of coins) {
+            if (coin.collected) continue;
+            let cy = coin.y + Math.sin(frameCount * 0.07 + coin.bobOff) * 5;
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            ctx.arc(coin.x + coin.width / 2, cy + coin.height / 2, coin.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#FFF';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('🪙', coin.x + coin.width / 2, cy + coin.height / 2 + 4);
+        }
+
+        for (let obs of obstacles) {
+            if (obs.type === 'box') { ctx.fillStyle = '#6D4C41';
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height); } else if (obs.type === 'sauce') { ctx.fillStyle = '#FF1744';
+                ctx.beginPath();
+                ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2);
+                ctx.fill(); } else { ctx.fillStyle = '#B0BEC5';
+                ctx.beginPath();
+                ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2);
+                ctx.fill(); }
+        }
+
+        drawPlayer(myPlayer);
+        drawPlayer(remotePlayer);
+
+        ctx.save();
+        ctx.translate(pizza.x + pizza.width / 2, pizza.y + pizza.height / 2);
+        ctx.rotate(pizza.rotation);
+        ctx.fillStyle = '#F4A460';
+        ctx.beginPath();
+        ctx.arc(0, 0, 55, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#FFD54F';
+        ctx.beginPath();
+        ctx.arc(0, 0, 48, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#E53935';
+        ctx.beginPath();
+        ctx.arc(0, 0, 40, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#FFF';
+        ctx.beginPath();
+        ctx.arc(-15, -12, 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(15, -12, 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(-12, -10, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(18, -10, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.fillStyle = '#FFF';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('Ты: ' + myScore, 10, 30);
+        ctx.fillText('Враг: ' + remoteScore, 10, 55);
+    }
+
+    function endGame() {
+        gameOver = true;
+        gameRunning = false;
+        gameOverScreen.style.display = 'flex';
+        let winner = myScore > remoteScore ? 'ТЫ ПОБЕДИЛ!' : remoteScore > myScore ? 'ТЫ ПРОИГРАЛ!' : 'НИЧЬЯ!';
+        winText.textContent = winner;
+        finalScoreEl.textContent = myScore + ' - ' + remoteScore;
+    }
+
+    function gameLoop() {
+        update();
+        if (gameRunning) draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function initPeer() {
+        if (peer) { peer.destroy();
+            peer = null; }
+        peer = new Peer();
+
+        peer.on('open', (id) => {
+            myId = id;
+            console.log('My ID:', id);
+            if (amHost) {
+                roomCodeEl.textContent = id;
+                statusEl.textContent = 'Отправь этот код другу!';
+                lobby.style.display = 'flex';
+                menu.style.display = 'none';
+                initGame();
+            }
+        });
+
+        peer.on('connection', (c) => {
+            conn = c;
+            setupConnection();
+            if (!gameRunning) initGame();
+            amHost = true;
+            statusEl.textContent = 'Игрок подключился! Играем!';
+            setTimeout(() => { lobby.style.display = 'none'; }, 1000);
+        });
+
+        peer.on('error', (e) => {
+            console.error(e);
+            menuStatus.textContent = 'Ошибка соединения. Попробуй ещё раз.';
+            if (e.type === 'unavailable-id') {
+                menuStatus.textContent = 'Этот код уже занят. Создай новый.';
+            }
+        });
+
+        peer.on('disconnected', () => {
+            if (peer && !peer.destroyed) peer.reconnect();
+        });
+    }
+
+    function setupConnection() {
+        conn.on('open', () => {
+            console.log('Connection open');
+            if (!gameRunning) initGame();
+            amHost = false;
+            menu.style.display = 'none';
+            lobby.style.display = 'none';
+        });
+
+        conn.on('data', (data) => {
+            if (data.type === 'gameState' && !amHost) {
+                remotePlayer.x = data.myX;
+                remotePlayer.y = data.myY;
+                remotePlayer.dead = data.myDead;
+                remoteScore = data.myScore;
+                obstacles = data.obstacles.map(o => ({ ...o }));
+                coins = data.coins.map(c => ({ ...c, width: 26, height: 26, collected: false, bobOff: Math.random() * Math.PI * 2 }));
+                pizza.x = data.pizzaX;
+                pizza.y = data.pizzaY;
+                pizza.rotation = data.pizzaRot;
+                gameSpeed = data.gameSpeed;
+                frameCount = data.frameCount;
+                if (remotePlayer.dead || myPlayer.dead) endGame();
+            }
+        });
+
+        conn.on('close', () => {
+            if (gameRunning) {
+                menuStatus.textContent = 'Соединение разорвано';
+                resetAll();
+            }
+        });
+    }
+
+    // Кнопки
+    document.getElementById('btnHost').addEventListener('click', () => {
+        resetAll();
+        amHost = true;
+        menuStatus.textContent = 'Создаю комнату...';
+        initPeer();
+    });
+
+    document.getElementById('btnJoin').addEventListener('click', () => {
+        let code = joinCodeInput.value.trim();
+        if (!code) { menuStatus.textContent = 'Введи код!'; return; }
+        resetAll();
+        amHost = false;
+        initPeer();
+        peer.on('open', (id) => {
+            myId = id;
+            conn = peer.connect(code);
+            setupConnection();
+            menuStatus.textContent = 'Подключаюсь...';
+        });
+    });
+
+    document.getElementById('btnCancel').addEventListener('click', resetAll);
+    document.getElementById('btnMenu').addEventListener('click', resetAll);
+    document.getElementById('btnRematch').addEventListener('click', () => {
+        initGame();
+        if (amHost) sendGameState();
+    });
+
+    // Копирование кода по нажатию
+    roomCodeEl.addEventListener('click', () => {
+        let code = roomCodeEl.textContent;
+        if (code && code !== '------') {
+            navigator.clipboard.writeText(code).then(() => {
+                statusEl.textContent = 'Код скопирован! Отправь другу.';
+            }).catch(() => {
+                statusEl.textContent = 'Код: ' + code + ' (скопируй вручную)';
+            });
+        }
+    });
+
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (!myPlayer.jumping && !myPlayer.dead && gameRunning) {
+            myPlayer.vy = jumpForce;
+            myPlayer.jumping = true;
+        }
+    });
+    canvas.addEventListener('click', () => {
+        if (!myPlayer.jumping && !myPlayer.dead && gameRunning) {
+            myPlayer.vy = jumpForce;
+            myPlayer.jumping = true;
+        }
+    });
+
+    initGame();
+    gameLoop();
+</script>
+</body>
+  </html>
